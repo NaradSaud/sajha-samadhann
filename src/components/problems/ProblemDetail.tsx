@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from "react";
 import { useParams } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
-import { getProblem, updateProblemStatus, Problem, ProblemStatus } from "@/services/problemService";
+import { getProblemById, updateProblemStatus, Problem, ProblemStatus } from "@/services/problemService";
 import { toast } from "@/components/ui/use-toast";
 import {
   Card,
@@ -57,8 +57,8 @@ const ProblemDetail = () => {
     const loadProblem = async () => {
       try {
         if (id) {
-          const data = await getProblem(id);
-          setProblem(data);
+          const data = await getProblemById(id);
+          setProblem(data || null);
         }
       } catch (error) {
         toast({
@@ -76,24 +76,14 @@ const ProblemDetail = () => {
 
   const handleStatusChange = async (newStatus: ProblemStatus) => {
     try {
-      if (!problem) return;
+      if (!problem || !user) return;
       
       setUpdating(true);
-      
-      // Add update to problem history
-      const update = {
-        id: Date.now().toString(),
-        date: new Date().toISOString(),
-        status: newStatus,
-        comment: `Status changed to ${statusLabels[newStatus]}`,
-        agentId: user?.id || "",
-        agentName: user?.name || "System",
-      };
       
       const updatedProblem = await updateProblemStatus(
         problem.id,
         newStatus,
-        update
+        user
       );
       
       setProblem(updatedProblem);
@@ -143,7 +133,7 @@ const ProblemDetail = () => {
         <div className="flex flex-wrap gap-2 items-center text-sm text-muted-foreground">
           <div className="flex items-center">
             <Clock className="h-4 w-4 mr-1" />
-            {format(new Date(problem.date), "MMMM d, yyyy")}
+            {format(new Date(problem.createdAt), "MMMM d, yyyy")}
           </div>
           <div className="flex items-center">
             <User className="h-4 w-4 mr-1" />
@@ -379,28 +369,28 @@ const ProblemDetail = () => {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              {problem.updates && problem.updates.length > 0 ? (
+              {problem.comments && problem.comments.length > 0 ? (
                 <div className="space-y-4">
-                  {problem.updates.map((update, index) => (
-                    <div key={update.id}>
+                  {problem.comments.map((comment, index) => (
+                    <div key={comment.id}>
                       <div className="flex gap-2 items-start">
-                        <div className={`w-2 h-2 rounded-full mt-2 ${statusColors[update.status].split(" ")[0]}`} />
+                        <div className="w-2 h-2 rounded-full mt-2 bg-blue-100" />
                         <div className="flex-1">
                           <div className="flex justify-between items-start">
                             <h4 className="font-medium">
-                              {statusLabels[update.status]}
+                              Comment
                             </h4>
                             <p className="text-xs text-muted-foreground">
-                              {format(new Date(update.date), "MMM d, yyyy h:mm a")}
+                              {format(new Date(comment.createdAt), "MMM d, yyyy h:mm a")}
                             </p>
                           </div>
-                          <p className="text-sm mt-1">{update.comment}</p>
+                          <p className="text-sm mt-1">{comment.text}</p>
                           <p className="text-xs text-muted-foreground mt-1">
-                            By {update.agentName}
+                            By {comment.userName}
                           </p>
                         </div>
                       </div>
-                      {index < problem.updates.length - 1 && (
+                      {index < problem.comments.length - 1 && (
                         <div className="pl-1 ml-1 mt-2 mb-2 border-l-2 border-dashed border-muted h-4" />
                       )}
                     </div>
