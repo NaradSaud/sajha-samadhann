@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
-import { createProblem, fileToBase64 } from "@/services/problemService";
+import { createProblem, fileToBase64, Media } from "@/services/problemService";
 import { toast } from "@/components/ui/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,7 +16,7 @@ const ProblemForm = () => {
   const [description, setDescription] = useState("");
   const [location, setLocation] = useState("");
   const [isGettingLocation, setIsGettingLocation] = useState(false);
-  const [media, setMedia] = useState<Array<{ type: 'image' | 'video'; url: string }>>([]);
+  const [media, setMedia] = useState<Media[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -71,7 +71,13 @@ const ProblemForm = () => {
       const base64 = await fileToBase64(file);
       const type = file.type.startsWith('image/') ? 'image' : 'video';
       
-      setMedia([...media, { type, url: base64 }]);
+      const newMedia: Media = {
+        id: Date.now().toString(),
+        type,
+        url: base64
+      };
+      
+      setMedia([...media, newMedia]);
       
       toast({
         title: "File uploaded",

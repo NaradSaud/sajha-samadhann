@@ -332,7 +332,7 @@ const ProblemDetail = () => {
                           <Button
                             variant="outline"
                             className="bg-yellow-50 text-yellow-700 hover:bg-yellow-100 border-yellow-200"
-                            disabled={problem.status === "pending" || updating}
+                            disabled={updating}
                           >
                             Reset to Pending
                           </Button>
