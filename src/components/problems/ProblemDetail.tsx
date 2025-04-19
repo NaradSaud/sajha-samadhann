@@ -1,310 +1,420 @@
 
-import { useState, useEffect } from "react";
-import { useParams, useNavigate } from "react-router-dom";
-import { format } from "date-fns";
+import React, { useState, useEffect } from "react";
+import { useParams } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
-import { Problem, getProblemById, addComment, updateProblemStatus, ProblemStatus } from "@/services/problemService";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { getProblem, updateProblemStatus, Problem, ProblemStatus } from "@/services/problemService";
 import { toast } from "@/components/ui/use-toast";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { MapPin, Clock, User, MessageSquare, ArrowLeft, Send, Eye, CheckCircle2, AlertCircle } from "lucide-react";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { MessageCircle, ThumbsUp, MapPin, Clock, User } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
+import { format } from "date-fns";
+
+const statusColors = {
+  pending: "bg-yellow-100 text-yellow-800 hover:bg-yellow-200",
+  watched: "bg-blue-100 text-blue-800 hover:bg-blue-200",
+  observed: "bg-purple-100 text-purple-800 hover:bg-purple-200",
+  success: "bg-green-100 text-green-800 hover:bg-green-200",
+};
+
+const statusLabels: Record<ProblemStatus, string> = {
+  pending: "Pending",
+  watched: "Watched",
+  observed: "Under Observation",
+  success: "Resolved",
+};
 
 const ProblemDetail = () => {
   const { id } = useParams<{ id: string }>();
   const [problem, setProblem] = useState<Problem | null>(null);
   const [loading, setLoading] = useState(true);
-  const [comment, setComment] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [activeImageIndex, setActiveImageIndex] = useState(0);
+  const [updating, setUpdating] = useState(false);
+  const [activeTab, setActiveTab] = useState<"details" | "updates">("details");
   const { user } = useAuth();
-  const navigate = useNavigate();
-
-  const statusColors: Record<ProblemStatus, string> = {
-    pending: "status-pending",
-    watched: "status-watched",
-    observed: "status-observed",
-    success: "status-success"
-  };
-  
-  const statusLabels: Record<ProblemStatus, string> = {
-    pending: "Pending",
-    watched: "Watched",
-    observed: "Under Observation",
-    success: "Resolved"
-  };
+  const isAgent = user?.role === "agent";
 
   useEffect(() => {
-    const fetchProblem = async () => {
-      if (!id) return;
-      
+    const loadProblem = async () => {
       try {
-        const data = await getProblemById(id);
-        if (data) {
+        if (id) {
+          const data = await getProblem(id);
           setProblem(data);
-        } else {
-          toast({
-            variant: "destructive",
-            title: "Not found",
-            description: "Problem not found"
-          });
-          navigate("/");
         }
       } catch (error) {
         toast({
           variant: "destructive",
           title: "Error",
-          description: "Failed to load problem details"
+          description: "Failed to load problem details",
         });
       } finally {
         setLoading(false);
       }
     };
-    
-    fetchProblem();
-  }, [id, navigate]);
+
+    loadProblem();
+  }, [id]);
 
   const handleStatusChange = async (newStatus: ProblemStatus) => {
-    if (!problem || !user || user.role !== 'agent') return;
-    
-    setSubmitting(true);
     try {
-      const updated = await updateProblemStatus(problem.id, newStatus, user);
-      setProblem(updated);
+      if (!problem) return;
+      
+      setUpdating(true);
+      
+      // Add update to problem history
+      const update = {
+        id: Date.now().toString(),
+        date: new Date().toISOString(),
+        status: newStatus,
+        comment: `Status changed to ${statusLabels[newStatus]}`,
+        agentId: user?.id || "",
+        agentName: user?.name || "System",
+      };
+      
+      const updatedProblem = await updateProblemStatus(
+        problem.id,
+        newStatus,
+        update
+      );
+      
+      setProblem(updatedProblem);
+      
       toast({
         title: "Status updated",
-        description: `Problem status changed to ${statusLabels[newStatus]}`
+        description: `Problem status updated to ${statusLabels[newStatus]}`,
       });
-    } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "Update failed",
-        description: error.message
-      });
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleAddComment = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    if (!problem || !user || !comment.trim()) return;
-    
-    setSubmitting(true);
-    try {
-      await addComment(problem.id, comment, user);
-      // Refresh problem data
-      const updated = await getProblemById(problem.id);
-      if (updated) {
-        setProblem(updated);
-        setComment("");
-      }
     } catch (error) {
       toast({
         variant: "destructive",
-        title: "Comment failed",
-        description: "Failed to add comment"
+        title: "Update failed",
+        description: "Failed to update problem status",
       });
     } finally {
-      setSubmitting(false);
+      setUpdating(false);
     }
   };
 
   if (loading) {
     return (
-      <div className="flex justify-center items-center py-12">
-        <div className="loader">Loading...</div>
+      <div className="container max-w-4xl mx-auto px-4 py-8">
+        <div className="animate-pulse space-y-4">
+          <div className="h-8 bg-gray-200 rounded w-1/3"></div>
+          <div className="h-4 bg-gray-200 rounded w-1/4"></div>
+          <div className="h-64 bg-gray-200 rounded"></div>
+        </div>
       </div>
     );
   }
 
   if (!problem) {
     return (
-      <div className="text-center py-12">
-        <AlertCircle className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-        <h2 className="text-2xl font-bold mb-2">Problem Not Found</h2>
-        <p className="text-muted-foreground mb-4">The problem you're looking for doesn't exist or has been removed.</p>
-        <Button onClick={() => navigate("/")} variant="outline">
-          <ArrowLeft className="mr-2 h-4 w-4" /> Back to Home
-        </Button>
+      <div className="container max-w-4xl mx-auto px-4 py-8 text-center">
+        <h2 className="text-2xl font-bold mb-4">Problem Not Found</h2>
+        <p className="text-muted-foreground">
+          The problem you're looking for doesn't exist or has been removed
+        </p>
       </div>
     );
   }
 
   return (
-    <div className="container max-w-4xl mx-auto py-6 px-4">
-      <Button 
-        variant="ghost" 
-        className="mb-6" 
-        onClick={() => navigate(-1)}
-      >
-        <ArrowLeft className="mr-2 h-4 w-4" /> Back
-      </Button>
-      
-      <Card>
-        <CardHeader>
-          <div className="flex justify-between items-start">
-            <CardTitle className="text-2xl">{problem.title}</CardTitle>
-            <div className={`status-badge ${statusColors[problem.status]}`}>
-              {problem.status === 'observed' && <Eye className="h-3 w-3 mr-1" />}
-              {problem.status === 'success' && <CheckCircle2 className="h-3 w-3 mr-1" />}
-              {statusLabels[problem.status]}
-            </div>
+    <div className="container max-w-4xl mx-auto px-4 py-8">
+      <div className="mb-6">
+        <h1 className="text-2xl md:text-3xl font-bold mb-2">{problem.title}</h1>
+        <div className="flex flex-wrap gap-2 items-center text-sm text-muted-foreground">
+          <div className="flex items-center">
+            <Clock className="h-4 w-4 mr-1" />
+            {format(new Date(problem.date), "MMMM d, yyyy")}
           </div>
-          <CardDescription className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 mt-2">
-            <div className="flex items-center">
-              <User className="h-4 w-4 mr-1" />
-              <span>{problem.userName}</span>
-            </div>
-            <div className="flex items-center">
-              <MapPin className="h-4 w-4 mr-1" />
-              <span>{problem.location}</span>
-            </div>
-            <div className="flex items-center">
-              <Clock className="h-4 w-4 mr-1" />
-              <span>{format(new Date(problem.createdAt), "PPP")}</span>
-            </div>
-          </CardDescription>
-        </CardHeader>
-        
-        <CardContent className="space-y-6">
-          <p className="whitespace-pre-line">{problem.description}</p>
-          
-          {problem.media.length > 0 && (
-            <div className="space-y-2">
-              <div className="relative rounded-md overflow-hidden">
-                {problem.media[activeImageIndex].type === 'image' ? (
-                  <img
-                    src={problem.media[activeImageIndex].url}
-                    alt={`Media for ${problem.title}`}
-                    className="w-full h-auto max-h-[500px] object-contain bg-gray-100"
-                  />
-                ) : (
-                  <video
-                    src={problem.media[activeImageIndex].url}
-                    controls
-                    className="w-full h-auto max-h-[500px]"
-                  />
-                )}
-              </div>
-              
-              {problem.media.length > 1 && (
-                <div className="flex gap-2 overflow-auto pb-2">
-                  {problem.media.map((item, index) => (
-                    <button
+          <div className="flex items-center">
+            <User className="h-4 w-4 mr-1" />
+            {problem.userName}
+          </div>
+          <div className="flex items-center">
+            <MapPin className="h-4 w-4 mr-1" />
+            {problem.location}
+          </div>
+          <div>
+            <Badge
+              variant="outline"
+              className={statusColors[problem.status]}
+            >
+              {statusLabels[problem.status]}
+            </Badge>
+          </div>
+        </div>
+      </div>
+
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "details" | "updates")}>
+        <TabsList className="mb-6">
+          <TabsTrigger value="details">Details</TabsTrigger>
+          <TabsTrigger value="updates">Updates</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="details" className="space-y-6">
+          {/* Problem description */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Description</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="whitespace-pre-line">{problem.description}</p>
+            </CardContent>
+          </Card>
+
+          {/* Media gallery */}
+          {problem.media && problem.media.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Photos & Videos</CardTitle>
+                <CardDescription>
+                  Visual evidence of the reported problem
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {problem.media.map((item) => (
+                    <div
                       key={item.id}
-                      className={`w-16 h-16 rounded-md overflow-hidden flex-shrink-0 border-2 ${
-                        index === activeImageIndex ? 'border-municipal-500' : 'border-transparent'
-                      }`}
-                      onClick={() => setActiveImageIndex(index)}
+                      className="border rounded-md overflow-hidden h-48"
                     >
-                      {item.type === 'image' ? (
+                      {item.type === "image" ? (
                         <img
                           src={item.url}
-                          alt={`Thumbnail ${index}`}
+                          alt="Problem evidence"
                           className="w-full h-full object-cover"
                         />
                       ) : (
-                        <div className="w-full h-full bg-gray-100 flex items-center justify-center">
-                          <Video className="h-8 w-8 text-gray-400" />
-                        </div>
+                        <video
+                          src={item.url}
+                          controls
+                          className="w-full h-full object-cover"
+                        />
                       )}
-                    </button>
+                    </div>
                   ))}
                 </div>
-              )}
-            </div>
+              </CardContent>
+            </Card>
           )}
-          
-          {user && user.role === 'agent' && (
-            <div className="p-4 bg-muted rounded-md">
-              <h3 className="font-medium mb-2">Update Status</h3>
-              <div className="flex gap-2">
-                <Select
-                  defaultValue={problem.status}
-                  onValueChange={value => handleStatusChange(value as ProblemStatus)}
-                  disabled={submitting}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Select status" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="pending">Pending</SelectItem>
-                    <SelectItem value="watched">Watched</SelectItem>
-                    <SelectItem value="observed">Under Observation</SelectItem>
-                    <SelectItem value="success">Resolved</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-          )}
-          
-          <div className="space-y-4 pt-4 border-t">
-            <h3 className="font-medium flex items-center">
-              <MessageSquare className="h-5 w-5 mr-2" />
-              Comments ({problem.comments.length})
-            </h3>
-            
-            <div className="space-y-4">
-              {problem.comments.length === 0 ? (
-                <p className="text-muted-foreground text-center py-6">
-                  No comments yet. Be the first to comment!
+
+          {/* Map/Location details */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Location</CardTitle>
+              <CardDescription>
+                Where this problem was reported
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="bg-muted rounded-md p-6 text-center">
+                <MapPin className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
+                <p className="font-medium">{problem.location}</p>
+                <p className="text-sm text-muted-foreground mt-2">
+                  Precise map location is not available in this demo version.
                 </p>
-              ) : (
-                problem.comments.map(comment => (
-                  <div key={comment.id} className="border-b pb-4 last:border-b-0 last:pb-0">
-                    <div className="flex justify-between items-start">
-                      <h4 className="font-medium">{comment.userName}</h4>
-                      <span className="text-xs text-muted-foreground">
-                        {format(new Date(comment.createdAt), "MMM d, yyyy 'at' h:mm a")}
-                      </span>
-                    </div>
-                    <p className="mt-1">{comment.text}</p>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        </CardContent>
-        
-        <CardFooter>
-          {user ? (
-            <form onSubmit={handleAddComment} className="w-full">
-              <div className="flex gap-2">
-                <Input
-                  placeholder="Write a comment..."
-                  value={comment}
-                  onChange={(e) => setComment(e.target.value)}
-                  className="flex-1"
-                  disabled={submitting}
-                  required
-                />
-                <Button 
-                  type="submit" 
-                  disabled={submitting || !comment.trim()}
-                >
-                  <Send className="h-4 w-4 mr-2" />
-                  Send
-                </Button>
               </div>
-            </form>
-          ) : (
-            <div className="w-full text-center py-2">
-              <p className="text-sm text-muted-foreground">
-                <Button variant="link" onClick={() => navigate("/login")}>Sign in</Button> to leave a comment
-              </p>
-            </div>
+            </CardContent>
+          </Card>
+
+          {/* Agent-only action card */}
+          {isAgent && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Municipal Actions</CardTitle>
+                <CardDescription>
+                  Update the status of this problem
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  <p className="text-sm text-muted-foreground mb-4">
+                    Current status: 
+                    <Badge 
+                      variant="outline" 
+                      className={`ml-2 ${statusColors[problem.status]}`}
+                    >
+                      {statusLabels[problem.status]}
+                    </Badge>
+                  </p>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button 
+                          variant="outline"
+                          className="bg-blue-50 text-blue-700 hover:bg-blue-100 border-blue-200"
+                          disabled={problem.status === "watched" || updating}
+                        >
+                          Mark as Watched
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Update to Watched</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            This will mark the problem as watched, indicating it has been reviewed by the municipality.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction onClick={() => handleStatusChange("watched")}>
+                            Confirm
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button
+                          variant="outline"
+                          className="bg-purple-50 text-purple-700 hover:bg-purple-100 border-purple-200"
+                          disabled={problem.status === "observed" || updating}
+                        >
+                          Under Observation
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Mark Under Observation</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            This will mark the problem as under observation, indicating active monitoring by the municipality.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction onClick={() => handleStatusChange("observed")}>
+                            Confirm
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button
+                          variant="outline"
+                          className="bg-green-50 text-green-700 hover:bg-green-100 border-green-200"
+                          disabled={problem.status === "success" || updating}
+                        >
+                          Mark as Resolved
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Mark as Resolved</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            This will mark the problem as resolved. This action indicates that the municipality has addressed and fixed the reported issue.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction onClick={() => handleStatusChange("success")}>
+                            Confirm
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+
+                    {problem.status !== "pending" && (
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button
+                            variant="outline"
+                            className="bg-yellow-50 text-yellow-700 hover:bg-yellow-100 border-yellow-200"
+                            disabled={problem.status === "pending" || updating}
+                          >
+                            Reset to Pending
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Reset to Pending</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              This will reset the problem status back to pending. Are you sure?
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction onClick={() => handleStatusChange("pending")}>
+                              Reset
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    )}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
           )}
-        </CardFooter>
-      </Card>
+        </TabsContent>
+
+        <TabsContent value="updates" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Status History</CardTitle>
+              <CardDescription>
+                Timeline of updates for this problem
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {problem.updates && problem.updates.length > 0 ? (
+                <div className="space-y-4">
+                  {problem.updates.map((update, index) => (
+                    <div key={update.id}>
+                      <div className="flex gap-2 items-start">
+                        <div className={`w-2 h-2 rounded-full mt-2 ${statusColors[update.status].split(" ")[0]}`} />
+                        <div className="flex-1">
+                          <div className="flex justify-between items-start">
+                            <h4 className="font-medium">
+                              {statusLabels[update.status]}
+                            </h4>
+                            <p className="text-xs text-muted-foreground">
+                              {format(new Date(update.date), "MMM d, yyyy h:mm a")}
+                            </p>
+                          </div>
+                          <p className="text-sm mt-1">{update.comment}</p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            By {update.agentName}
+                          </p>
+                        </div>
+                      </div>
+                      {index < problem.updates.length - 1 && (
+                        <div className="pl-1 ml-1 mt-2 mb-2 border-l-2 border-dashed border-muted h-4" />
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-muted-foreground text-center py-6">
+                  No updates have been recorded yet.
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 };
