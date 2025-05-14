@@ -1,5 +1,5 @@
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { createProblem, fileToBase64, Media } from "@/services/problemService";
@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { MapPin, Camera, ImagePlus, Video } from "lucide-react";
+import { MapPin, Camera } from "lucide-react";
 
 const ProblemForm = () => {
   const [title, setTitle] = useState("");
@@ -20,39 +20,36 @@ const ProblemForm = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { user } = useAuth();
   const navigate = useNavigate();
+  const cameraInputRef = useRef<HTMLInputElement>(null);
 
-  const handleGetCurrentLocation = () => {
-    if (!navigator.geolocation) {
-      toast({
-        variant: "destructive",
-        title: "Geolocation not supported",
-        description: "Your browser doesn't support geolocation."
-      });
-      return;
-    }
+  // Function to get the current location
+  const getCurrentLocation = (): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      if (!navigator.geolocation) {
+        reject(new Error("Geolocation not supported"));
+        return;
+      }
 
-    setIsGettingLocation(true);
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        const { latitude, longitude } = position.coords;
-        // For demo purposes, just set the coords as location
-        // In a real app, this would use a reverse geocoding service
-        setLocation(`Lat: ${latitude.toFixed(6)}, Long: ${longitude.toFixed(6)}`);
-        setIsGettingLocation(false);
-      },
-      (error) => {
-        toast({
-          variant: "destructive",
-          title: "Location error",
-          description: error.message
-        });
-        setIsGettingLocation(false);
-      },
-      { enableHighAccuracy: true }
-    );
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const { latitude, longitude } = position.coords;
+          resolve(`Lat: ${latitude.toFixed(6)}, Long: ${longitude.toFixed(6)}`);
+        },
+        (error) => {
+          reject(error);
+        },
+        { enableHighAccuracy: true }
+      );
+    });
   };
 
-  const handleMediaUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleTakePhoto = () => {
+    if (cameraInputRef.current) {
+      cameraInputRef.current.click();
+    }
+  };
+
+  const handleCameraCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
@@ -67,7 +64,13 @@ const ProblemForm = () => {
       return;
     }
 
+    setIsGettingLocation(true);
     try {
+      // Get location when photo is taken
+      const currentLocation = await getCurrentLocation();
+      setLocation(currentLocation);
+      
+      // Process the image
       const base64 = await fileToBase64(file);
       const type = file.type.startsWith('image/') ? 'image' : 'video';
       
@@ -80,15 +83,22 @@ const ProblemForm = () => {
       setMedia([...media, newMedia]);
       
       toast({
-        title: "File uploaded",
-        description: `${type === 'image' ? 'Image' : 'Video'} has been added`
+        title: "Photo captured",
+        description: "Location has been automatically captured"
       });
     } catch (error) {
       toast({
         variant: "destructive",
-        title: "Upload failed",
-        description: "Failed to upload file"
+        title: "Capture failed",
+        description: error instanceof Error ? error.message : "Failed to capture photo or location"
       });
+    } finally {
+      setIsGettingLocation(false);
+      
+      // Reset the input value to allow capturing another photo with the same input
+      if (cameraInputRef.current) {
+        cameraInputRef.current.value = '';
+      }
     }
   };
 
@@ -113,6 +123,15 @@ const ProblemForm = () => {
         variant: "destructive",
         title: "Missing information",
         description: "Please fill in all required fields"
+      });
+      return;
+    }
+    
+    if (media.length === 0) {
+      toast({
+        variant: "destructive",
+        title: "No photo",
+        description: "Please take a photo of the problem"
       });
       return;
     }
@@ -184,26 +203,27 @@ const ProblemForm = () => {
             <div className="flex gap-2">
               <Input
                 id="location"
-                placeholder="Enter the location of the problem"
+                placeholder="Location is captured automatically when taking a photo"
                 value={location}
-                onChange={(e) => setLocation(e.target.value)}
-                required
+                readOnly
                 className="flex-1"
               />
               <Button 
                 type="button" 
                 variant="outline" 
-                onClick={handleGetCurrentLocation}
-                disabled={isGettingLocation}
+                disabled={true}
               >
                 <MapPin className="h-4 w-4 mr-2" />
-                {isGettingLocation ? "Getting..." : "Current Location"}
+                Auto-captured
               </Button>
             </div>
+            <p className="text-xs text-muted-foreground">
+              Location is automatically captured when you take a photo
+            </p>
           </div>
           
           <div className="space-y-2">
-            <Label>Media (Optional)</Label>
+            <Label>Photo</Label>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
               {media.map((item, index) => (
                 <div key={index} className="relative h-24 border rounded-md overflow-hidden">
@@ -236,21 +256,31 @@ const ProblemForm = () => {
                 <div className="relative h-24 border border-dashed rounded-md flex flex-col items-center justify-center">
                   <input
                     type="file"
-                    id="media-upload"
-                    onChange={handleMediaUpload}
-                    accept="image/*,video/*"
-                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                    disabled={isSubmitting}
+                    id="camera-capture"
+                    ref={cameraInputRef}
+                    onChange={handleCameraCapture}
+                    accept="image/*"
+                    capture="environment"
+                    className="hidden"
+                    disabled={isSubmitting || isGettingLocation}
                   />
-                  <div className="flex flex-col items-center text-muted-foreground">
+                  <Button 
+                    type="button" 
+                    variant="outline"
+                    className="flex flex-col items-center h-full w-full p-2" 
+                    onClick={handleTakePhoto}
+                    disabled={isSubmitting || isGettingLocation}
+                  >
                     <Camera className="h-8 w-8 mb-1" />
-                    <span className="text-xs">Upload Photo/Video</span>
-                  </div>
+                    <span className="text-xs">
+                      {isGettingLocation ? "Processing..." : "Take Photo"}
+                    </span>
+                  </Button>
                 </div>
               )}
             </div>
             <p className="text-xs text-muted-foreground">
-              You can upload up to 3 photos or videos (max 5MB each)
+              You need to take a photo of the problem (max 3 photos)
             </p>
           </div>
         </CardContent>
@@ -259,7 +289,7 @@ const ProblemForm = () => {
           <Button 
             type="submit" 
             className="w-full" 
-            disabled={isSubmitting}
+            disabled={isSubmitting || media.length === 0}
           >
             {isSubmitting ? "Submitting..." : "Report Problem"}
           </Button>
