@@ -3,12 +3,19 @@ import { Navigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import Navbar from "@/components/Navbar";
 import ProblemForm from "@/components/problems/ProblemForm";
+import { toast } from "@/components/ui/use-toast";
 
 const CreateProblemPage = () => {
   const { user } = useAuth();
   
   // Redirect to login if not authenticated
   if (!user) {
+    // Show a toast to inform the user
+    toast({
+      title: "Authentication required",
+      description: "Please log in to report a problem",
+      variant: "destructive"
+    });
     return <Navigate to="/login" />;
   }
   

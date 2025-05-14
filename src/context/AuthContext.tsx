@@ -51,7 +51,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const savedUser = localStorage.getItem('bhimdatta-user');
     if (savedUser) {
-      setUser(JSON.parse(savedUser));
+      try {
+        setUser(JSON.parse(savedUser));
+      } catch (error) {
+        // Handle potential JSON parsing errors
+        console.error("Error parsing saved user:", error);
+        localStorage.removeItem('bhimdatta-user');
+      }
     }
     setLoading(false);
   }, []);

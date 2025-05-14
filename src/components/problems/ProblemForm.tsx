@@ -109,12 +109,14 @@ const ProblemForm = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
+    // Make sure we have a user before proceeding
     if (!user) {
       toast({
         variant: "destructive",
         title: "Not authenticated",
         description: "You must be logged in to report a problem"
       });
+      navigate("/login");
       return;
     }
     
